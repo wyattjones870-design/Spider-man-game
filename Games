@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Spider Hero Mobile</title>
+<style>
+body {
+    margin: 0;
+    overflow: hidden;
+    background: #87CEEB;
+    font-family: Arial, sans-serif;
+}
+canvas {
+    display: block;
+}
+#menu {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(#87CEEB, #1e3c72);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: white;
+}
+button {
+    padding: 15px 30px;
+    font-size: 20px;
+    margin: 10px;
+    border-radius: 12px;
+    border: none;
+    background: red;
+    color: white;
+}
+#ui {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    color: black;
+    font-weight: bold;
+    font-size: 18px;
+}
+.controls {
+    position: absolute;
+    bottom: 20px;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+}
+.control-btn {
+    width: 80px;
+    height: 80px;
+    margin: 10px;
+    border-radius: 50%;
+    background: rgba(255,0,0,0.8);
+    color: white;
+    font-size: 16px;
+    border: none;
+}
+</style>
+</head>
+<body>
+
+<div id="menu">
+    <h1>🕷️ Spider Hero</h1>
+    <p>Swing, dodge enemies, collect power-ups!</p>
+    <button onclick="startGame()">PLAY</button>
+</div>
+
+<div id="ui">Score: 0 | High Score: 0</div>
+
+<canvas id="game"></canvas>
+
+<div class="controls">
+    <button class="control-btn" id="swingBtn">SWING</button>
+</div>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const ui = document.getElementById("ui");
+const menu = document.getElementById("menu");
+const swingBtn = document.getElementById("swingBtn");
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+let gameRunning = false;
+let gravity = 0.5;
+let score = 0;
+let highScore = localStorage.getItem("spiderHighScore") || 0;
+let gameSpeed = 5;
+let slowMo = false;
+
+let player = {
+    x: canvas.width / 3,
+    y: canvas.height / 2,
+    radius: 18,
+    vy: 0,
+    swinging: false,
+    anchorX: 0,
+    anchorY: 0,
+    ropeLength: 140
+};
+
+let buildings = [];
+let enemies = [];
+let powerUps = [];
+let stars = [];
+
+for (let i = 0; i < 50; i++) {
+    stars.push({x: Math.random()*canvas.width, y: Math.random()*canvas.height});
+}
+
+function startGame() {
+    menu.style.display = "none";
+    gameRunning = true;
+    loop();
+}
+
+function spawnBuilding() {
+    const height = Math.random()*300 + 100;
+    buildings.push({
+        x: canvas.width + 60,
+        y: canvas.height - height,
+        width: 60,
+        height: height
+    });
+}
+
+function spawnEnemy() {
+    enemies.push({
+        x: canvas.width + 50,
+        y: Math.random() * (canvas.height - 200) + 100,
+        size: 25
+    });
+}
+
+function spawnPowerUp() {
+    powerUps.push({
+        x: canvas.width + 50,
+        y: Math.random() * (canvas.height - 200) + 100,
+        type: Math.random() > 0.5 ? "speed" : "slow"
+    });
+}
+
+setInterval(spawnBuilding, 1800);
+setInterval(spawnEnemy, 3000);
+setInterval(spawnPowerUp, 5000);
+
+function drawBackground() {
+    ctx.fillStyle = "#87CEEB";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    ctx.fillStyle = "white";
+    stars.forEach(s => {
+        ctx.fillRect(s.x, s.y, 2, 2);
+        s.x -= 0.5;
+        if (s.x < 0) s.x = canvas.width;
+    });
+}
+
+function drawPlayer() {
+    ctx.fillStyle = "red";
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, player.radius, 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.fillStyle = "white";
+    ctx.beginPath();
+    ctx.arc(player.x-6, player.y-5, 4, 0, Math.PI*2);
+    ctx.arc(player.x+6, player.y-5, 4, 0, Math.PI*2);
+    ctx.fill();
+
+    if (player.swinging) {
+        ctx.strokeStyle = "black";
+        ctx.beginPath();
+        ctx.moveTo(player.x, player.y);
+        ctx.lineTo(player.anchorX, player.anchorY);
+        ctx.stroke();
+    }
+}
+
+function updatePlayer() {
+    if (!player.swinging) {
+        player.vy += gravity;
+    } else {
+        let dx = player.x - player.anchorX;
+        let dy = player.y - player.anchorY;
+        let dist = Math.sqrt(dx*dx + dy*dy);
+        let angle = Math.atan2(dy, dx);
+        let tension = (dist - player.ropeLength) * 0.02;
+        player.vy -= Math.sin(angle) * tension * 4;
+        player.x -= Math.cos(angle) * tension * 4;
+    }
+    player.y += player.vy;
+
+    if (player.y > canvas.height - player.radius) endGame();
+}
+
+function drawBuildings() {
+    ctx.fillStyle = "#2c3e50";
+    buildings.forEach(b => {
+        b.x -= gameSpeed * (slowMo ? 0.5 : 1);
+        ctx.fillRect(b.x, b.y, b.width, b.height);
+
+        if (
+            player.x + player.radius > b.x &&
+            player.x - player.radius < b.x + b.width &&
+            player.y + player.radius > b.y
+        ) endGame();
+    });
+}
+
+function drawEnemies() {
+    ctx.fillStyle = "purple";
+    enemies.forEach(e => {
+        e.x -= gameSpeed;
+        ctx.fillRect(e.x, e.y, e.size, e.size);
+
+        if (
+            player.x + player.radius > e.x &&
+            player.x - player.radius < e.x + e.size &&
+            player.y + player.radius > e.y &&
+            player.y - player.radius < e.y + e.size
+        ) endGame();
+    });
+}
+
+function drawPowerUps() {
+    powerUps.forEach(p => {
+        p.x -= gameSpeed;
+        ctx.fillStyle = p.type === "speed" ? "yellow" : "cyan";
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 12, 0, Math.PI*2);
+        ctx.fill();
+
+        if (
+            Math.hypot(player.x - p.x, player.y - p.y) < 30
+        ) {
+            if (p.type === "speed") gameSpeed = 9;
+            if (p.type === "slow") slowMo = true;
+            setTimeout(() => { gameSpeed = 5; slowMo = false; }, 4000);
+            powerUps.splice(powerUps.indexOf(p),1);
+        }
+    });
+}
+
+function endGame() {
+    gameRunning = false;
+    highScore = Math.max(score, highScore);
+    localStorage.setItem("spiderHighScore", highScore);
+    menu.style.display = "flex";
+    menu.innerHTML = `<h1>Game Over</h1><p>Score: ${score}</p><p>High Score: ${highScore}</p><button onclick="location.reload()">RESTART</button>`;
+}
+
+function loop() {
+    if (!gameRunning) return;
+
+    drawBackground();
+    updatePlayer();
+    drawPlayer();
+    drawBuildings();
+    drawEnemies();
+    drawPowerUps();
+
+    score++;
+    ui.textContent = "Score: " + score + " | High Score: " + highScore;
+
+    requestAnimationFrame(loop);
+}
+
+swingBtn.addEventListener("touchstart", () => {
+    player.swinging = true;
+    player.anchorX = player.x;
+    player.anchorY = 0;
+});
+swingBtn.addEventListener("touchend", () => {
+    player.swinging = false;
+});
+</script>
+</body>
+</html>
